@@ -144,6 +144,7 @@ def mol_to_spektral(mol, y = None):
         objects (dictionaries).
     """
     A = Chem.GetAdjacencyMatrix(mol)
+    assert np.all(np.sum(A, axis=1) > 0)
     X = []
     begin = []
     end = []
@@ -154,11 +155,25 @@ def mol_to_spektral(mol, y = None):
                 int(atom.GetChiralTag()),       # chiral_tag
                 int(atom.GetHybridization()),   # hybridization 
                 atom.GetNumExplicitHs(),        # num_explicit_hs
+                # atom.GetNumImplicitHs(),      # num_implicit_hs
+                # atom.GetTotalNumHs(),         # num_explicit_hs + num_implicit_hs
+                atom.GetExplicitValence(),
+                # atom.GetImplicitValence(),
+                # atom.GetTotalValence(),
+                # atom.IsInRing(),                   
+                atom.GetMass(),                 # mass
+                # atom.GetNumRadicalElectrons(),
                 int(atom.GetIsAromatic())])     # is_aromatic
     for bond in mol.GetBonds():
         begin.append(bond.GetBeginAtomIdx())
         end.append(bond.GetEndAtomIdx())
-        E.append([int(bond.GetBondType())])
+        E.append([int(bond.GetBondType()),      # bond_type
+                # bond.GetIsAromatic(),         
+                # bond.GetIsConjugated(),
+                bond.GetStereo(),             # stereo_configuration
+                # bond.GetValenceContrib(),      # contrib_to_valance
+                # bond.IsInRing(),
+                ])     
 
     _E = list(zip(begin + end, end + begin, E + E))
     _E.sort(key=lambda ele: (ele[0], ele[1]))
@@ -181,7 +196,7 @@ def spektral_to_mol():
     pass
 
 
-def smiles_to_spektral(smiles, y = None, validate=False, scipy_E = False):
+def smiles_to_spektral(smiles, y = None, validate=False, scipy_E = False, IncludeHs = False):
     """
     Convert SMILES string to nx.Graph.
 
@@ -199,6 +214,9 @@ def smiles_to_spektral(smiles, y = None, validate=False, scipy_E = False):
     """
     mol = Chem.MolFromSmiles(smiles.strip())
     assert mol is not None
+
+    if IncludeHs:
+        mol = Chem.rdmolops.AddHs(mol)
 
     can_smi = Chem.MolToSmiles(mol) # canonical SMILES - TO DO: Check if this row is necessary.
     G = mol_to_spektral(mol, y = y)
@@ -222,8 +240,16 @@ def pdb_to_nx():
         parser = PDBParser(QUIET=False)
         return parser.get_structure(pdb_id, pdb_path)
     
-    if __name__ == '__main__':
-        pdb_name = "Olfr263.B99991199.pdb"
-        pdb_path = os.path.join("pdb_test", pdb_name)
-    
-        fn = get_structure_by_path("Olfr263", pdb_path)
+if __name__ == '__main__':
+    # pdb_name = "Olfr263.B99991199.pdb"
+    # pdb_path = os.path.join("pdb_test", pdb_name)
+
+    # fn = get_structure_by_path("Olfr263", pdb_path)
+
+    smiles = 'CC1=CCC(CC1O)C(=C)C'
+
+    G = smiles_to_spektral(smiles, y = None, validate=False, scipy_E = False, IncludeHs = False)
+
+    print(G.x)
+    print(G.a)
+    print(G.e)
