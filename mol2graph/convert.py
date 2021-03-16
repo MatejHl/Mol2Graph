@@ -1,10 +1,11 @@
 import itertools
 import networkx as nx
-from spektral.data.graph import Graph as sp_Graph
 from rdkit import Chem
 import numpy as np
 import scipy
 
+from .containers import ExtendedGraph as sp_Graph
+from .containers import ExtendedDataset
 
 def mol_to_nx(mol):
     """
@@ -106,11 +107,45 @@ def smiles_to_nx(smiles, validate=False):
     return G
 
 
+def fasta_to_nx(fasta, validate=False):
+    """
+    Convert FASTA string to nx.Graph.
+
+    Notes:
+    ------
+    Internally this function creates RDkit molecule and uses mol_to_nx.
+    """
+    mol = Chem.MolFromFASTA(fasta.strip())
+    can_smi = Chem.MolToSmiles(mol) # canonical SMILES - TO DO: Check if this row is necessary.
+    G = mol_to_nx(mol)
+    if validate:
+        mol = nx_to_mol(G)
+        new_smi = Chem.MolToSmiles(mol)
+        assert new_smi == smiles
+    return G
+
+
+def pdb_to_nx():
+    import os
+    import io
+    
+    # biopython
+    from Bio.PDB import PDBParser, PPBuilder, Chain
+    
+    
+    raise NotImplementedError('Needs to be finished and moved to smiles2graph')
+    
+    
+    def get_structure_by_path(pdb_id, pdb_path):
+        parser = PDBParser(QUIET=False)
+        return parser.get_structure(pdb_id, pdb_path)
+
+
 CHIRAL_TAG = {key : int(val) for key, val in Chem.rdchem.ChiralType.names.items()}
 HYBRIDIZATION = {key : int(val) for key, val in Chem.rdchem.HybridizationType.names.items()}
 BOND_TYPE = {key : int(val) for key, val in Chem.rdchem.BondType.names.items()}
 
-def mol_to_spektral(mol, y = None):
+def mol_to_numpy(mol, y = None, u = None):
     """
     For now, this is just an example function. Copy it and change if you need 
     any other Atom/Bond attributes.
@@ -154,8 +189,8 @@ def mol_to_spektral(mol, y = None):
                 atom.GetFormalCharge(),         # formal_charge
                 int(atom.GetChiralTag()),       # chiral_tag
                 int(atom.GetHybridization()),   # hybridization 
-                atom.GetNumExplicitHs(),        # num_explicit_hs
-                # atom.GetNumImplicitHs(),      # num_implicit_hs
+                # atom.GetNumExplicitHs(),      # num_explicit_hs
+                atom.GetNumImplicitHs(),        # num_implicit_hs
                 # atom.GetTotalNumHs(),         # num_explicit_hs + num_implicit_hs
                 atom.GetExplicitValence(),
                 # atom.GetImplicitValence(),
@@ -163,14 +198,15 @@ def mol_to_spektral(mol, y = None):
                 # atom.IsInRing(),                   
                 atom.GetMass(),                 # mass
                 # atom.GetNumRadicalElectrons(),
-                int(atom.GetIsAromatic())])     # is_aromatic
+                int(atom.GetIsAromatic()), # is_aromatic
+                ])     
     for bond in mol.GetBonds():
         begin.append(bond.GetBeginAtomIdx())
         end.append(bond.GetEndAtomIdx())
         E.append([int(bond.GetBondType()),      # bond_type
                 # bond.GetIsAromatic(),         
                 # bond.GetIsConjugated(),
-                bond.GetStereo(),             # stereo_configuration
+                # bond.GetStereo(),             # stereo_configuration
                 # bond.GetValenceContrib(),      # contrib_to_valance
                 # bond.IsInRing(),
                 ])     
@@ -185,25 +221,70 @@ def mol_to_spektral(mol, y = None):
     # E = scipy.sparse.csr_matrix((data + data, (begin + end, end + begin)), shape = Chem.GetAdjacencyMatrix(mol).shape)
     # E.sort_indices()
 
-    G = sp_Graph(x = np.array(X, dtype = np.float32),
-                a = A.astype(np.float32),
-                e = E,
-                y = y)
+    x = np.array(X, dtype = np.float32)
+    a = A.astype(np.float32)
+    e = E
+
+    G = (x, a, e, y, u)
+    return G
+
+def mol_to_spektral(mol, y = None, u = None):
+    """
+    For now, this is just an example function. Copy it and change if you need 
+    any other Atom/Bond attributes.
+
+    See 'rdkit.Chem.rdchem.Atom' for all possible attributes of nodes and
+    'rdkit.Chem.rdchem.Bond' for all possible attributes of nodes 
+    at https://www.rdkit.org/docs/source/rdkit.Chem.rdchem.html
+
+    Paramters:
+    ----------
+    mol : rdkit.Chem.rdchem.Mol
+
+    Returns:
+    --------
+    graph : 
+        Attributes of the graph are following:
+        X = [atomic_num
+             formal_charge
+             chiral_tag
+             hybridization
+             num_explicit_hs
+             is_aromatic]
+
+        E = [bond_type]
+        E is stored as a numpy array where elements are ordered by (row_idx, col_idx) (so similar 
+        to scipy.sparse.crs_matrix) and adjecancy matrix is used to extraxt which to which edge the
+        data corresponds. 
+
+        Categorical features in X and E are encoded by rdkit.Chem.rdchem standard numbering and
+        mapping from numbers to names can be accessed from CHIRAL_TAG, HYBRIDIZATION and BOND_TYPE
+        objects (dictionaries).
+    """
+    x, a, e, y, u = mol_to_numpy(mol, y, u)
+    G = sp_Graph(x = x,
+                a = a,
+                e = e,
+                y = y,
+                u = u)         
     return G
 
 
 def spektral_to_mol():
-    pass
+    raise NotImplementedError('spektral_to_mol is not implemented yet.')
 
 
-def smiles_to_spektral(smiles, y = None, validate=False, scipy_E = False, IncludeHs = False):
+def smiles_to_spektral(smiles, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False):
     """
-    Convert SMILES string to nx.Graph.
+    Convert SMILES string to spektral.data.graph.Graph.
 
     TO DO: implement validate
 
     Paramters:
     ----------
+    smiles : str
+        SMILES string that will be converted to rdkit.Chem.rdchem.Mol using Chem.MolFromSmiles
+
     validate : bool
         whether to validate if reverse conversion is working. This is not
         implemented at the moment.
@@ -219,27 +300,69 @@ def smiles_to_spektral(smiles, y = None, validate=False, scipy_E = False, Includ
         mol = Chem.rdmolops.AddHs(mol)
 
     can_smi = Chem.MolToSmiles(mol) # canonical SMILES - TO DO: Check if this row is necessary.
-    G = mol_to_spektral(mol, y = y)
+    G = mol_to_spektral(mol, y = y, u = u)
     if validate:
         raise NotImplementedError("validate = True is not implemented at the moment. Use validate = False.")
     return G
 
 
-def pdb_to_nx():
-    import os
-    import io
+def fasta_to_spektral(fasta, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False):
+    """
+    Convert FASTA string to spektral.data.graph.Graph.
+
+    Paramters:
+    ----------
+    fasta : str
+        FASTA string that will be converted to rdkit.Chem.rdchem.Mol using 
+    """
+    mol = Chem.rdmolfiles.MolFromFASTA(fasta.strip())
+    assert mol is not None
+
+    if IncludeHs:
+        mol = Chem.rdmolops.AddHs(mol)
+
+    can_smi = Chem.MolToSmiles(mol) # canonical SMILES - TO DO: Check if this row is necessary.
+    G = mol_to_spektral(mol, y = y, u = u)
+    if validate:
+        raise NotImplementedError("validate = True is not implemented at the moment. Use validate = False.")
+
+    return G
     
-    # biopython
-    from Bio.PDB import PDBParser, PPBuilder, Chain
     
-    
-    raise NotImplementedError('Needs to be finished and moved to smiles2graph')
-    
-    
-    def get_structure_by_path(pdb_id, pdb_path):
-        parser = PDBParser(QUIET=False)
-        return parser.get_structure(pdb_id, pdb_path)
-    
+def smiles_to_numpy(smiles, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False):
+    """
+    Convert SMILES string to spektral.data.graph.Graph.
+
+    TO DO: implement validate
+
+    Paramters:
+    ----------
+    smiles : str
+        SMILES string that will be converted to rdkit.Chem.rdchem.Mol using Chem.MolFromSmiles
+
+    validate : bool
+        whether to validate if reverse conversion is working. This is not
+        implemented at the moment.
+
+    Notes:
+    ------
+    Internally this function creates RDkit molecule and uses mol_to_spektral(mol, scipy_E = False).
+    """
+    mol = Chem.MolFromSmiles(smiles.strip())
+    assert mol is not None
+
+    if IncludeHs:
+        mol = Chem.rdmolops.AddHs(mol)
+
+    can_smi = Chem.MolToSmiles(mol) # canonical SMILES - TO DO: Check if this row is necessary.
+    G = mol_to_numpy(mol, y = y, u = u)
+    G = [s for s in G if s is not None]
+    if validate:
+        raise NotImplementedError("validate = True is not implemented at the moment. Use validate = False.")
+    return G
+
+
+
 if __name__ == '__main__':
     # pdb_name = "Olfr263.B99991199.pdb"
     # pdb_path = os.path.join("pdb_test", pdb_name)
@@ -248,8 +371,28 @@ if __name__ == '__main__':
 
     smiles = 'CC1=CCC(CC1O)C(=C)C'
 
-    G = smiles_to_spektral(smiles, y = None, validate=False, scipy_E = False, IncludeHs = False)
+    G = smiles_to_spektral(smiles, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False)
 
     print(G.x)
     print(G.a)
     print(G.e)
+
+    print('--------------------------')
+
+    fasta = 'WHVSC'
+
+    G = fasta_to_spektral(fasta, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False)
+    print(G.x)
+    print(G.a)
+    print(G.e)
+    print(G.u)
+    print(G)
+    print('--------------------------')
+
+    # x, a, e, y, u = smiles_to_numpy(smiles, y = 1, u = np.array([1,2,3]), validate=False, scipy_E = False, IncludeHs = False)
+    # print(x)
+    # print(a)
+    # print(e)
+    # print(y)
+    # print(u)
+    # print('--------------------------')
