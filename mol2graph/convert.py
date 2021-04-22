@@ -4,8 +4,8 @@ from rdkit import Chem
 import numpy as np
 import scipy
 
-from .containers import ExtendedGraph as sp_Graph
-from .containers import ExtendedDataset
+from mol2graph.containers import ExtendedGraph as sp_Graph
+from mol2graph.containers import ExtendedDataset
 
 def mol_to_nx(mol):
     """
@@ -145,7 +145,7 @@ CHIRAL_TAG = {key : int(val) for key, val in Chem.rdchem.ChiralType.names.items(
 HYBRIDIZATION = {key : int(val) for key, val in Chem.rdchem.HybridizationType.names.items()}
 BOND_TYPE = {key : int(val) for key, val in Chem.rdchem.BondType.names.items()}
 
-def mol_to_numpy(mol, y = None, u = None):
+def mol_to_numpy(mol, y = None, u = None, atom_features = [], bond_features = []):
     """
     For now, this is just an example function. Copy it and change if you need 
     any other Atom/Bond attributes.
@@ -160,23 +160,50 @@ def mol_to_numpy(mol, y = None, u = None):
 
     Returns:
     --------
-    graph : 
-        Attributes of the graph are following:
-        X = [atomic_num
-             formal_charge
-             chiral_tag
-             hybridization
-             num_explicit_hs
-             is_aromatic]
+    x : 
+        node attributes. Can contain: 
+            [AtomicNum
+             FormalCharge
+             ChiralTag
+             Hybridization
+             NumExplicitHs
+             NumImplicitHs
+             TotalNumHs
+             ExplicitValence
+             ImplicitValence
+             TotalValence
+             IsInRing
+             Mass
+             NumRadicalElectrons
+             IsAromatic]
 
-        E = [bond_type]
+    a : np.array
+        graph Adjecency matrix.
+    
+    e : np.array
+        edge attributes.
         E is stored as a numpy array where elements are ordered by (row_idx, col_idx) (so similar 
         to scipy.sparse.crs_matrix) and adjecancy matrix is used to extraxt which to which edge the
-        data corresponds. 
+        data corresponds.
+        Can contain:
+            [BondType
+             IsAromatic
+             IsConjugated
+             Stereo
+             ValenceContrib
+             IsInRing]
 
-        Categorical features in X and E are encoded by rdkit.Chem.rdchem standard numbering and
-        mapping from numbers to names can be accessed from CHIRAL_TAG, HYBRIDIZATION and BOND_TYPE
-        objects (dictionaries).
+    y : np.array
+        labels for a given graph. Only returning input y.
+    
+    u : np.array
+        graph level features for a given graph. Only returning input y.
+
+    Notes:
+    ------
+    Categorical features in X and E are encoded by rdkit.Chem.rdchem standard numbering and
+    mapping from numbers to names can be accessed from CHIRAL_TAG, HYBRIDIZATION and BOND_TYPE
+    objects (dictionaries).
     """
     A = Chem.GetAdjacencyMatrix(mol)
     assert np.all(np.sum(A, axis=1) > 0)
@@ -185,31 +212,68 @@ def mol_to_numpy(mol, y = None, u = None):
     end = []
     E = []
     for atom in mol.GetAtoms():
-        X.append([atom.GetAtomicNum(),          # atomic_num
-                atom.GetFormalCharge(),         # formal_charge
-                int(atom.GetChiralTag()),       # chiral_tag
-                int(atom.GetHybridization()),   # hybridization 
-                # atom.GetNumExplicitHs(),      # num_explicit_hs
-                atom.GetNumImplicitHs(),        # num_implicit_hs
-                # atom.GetTotalNumHs(),         # num_explicit_hs + num_implicit_hs
-                atom.GetExplicitValence(),
-                # atom.GetImplicitValence(),
-                # atom.GetTotalValence(),
-                # atom.IsInRing(),                   
-                atom.GetMass(),                 # mass
-                # atom.GetNumRadicalElectrons(),
-                int(atom.GetIsAromatic()), # is_aromatic
-                ])     
+        props = []
+        for prop in atom_features:
+            if   prop == 'AtomicNum':           props.append(atom.GetAtomicNum())
+            elif prop == 'FormalCharge':        props.append(atom.GetFormalCharge())
+            elif prop == 'ChiralTag':           props.append(int(atom.GetChiralTag())) # TODO: Check
+            elif prop == 'Hybridization':       props.append(int(atom.GetHybridization()))
+            elif prop == 'NumExplicitHs':       props.append(atom.GetNumExplicitHs())
+            elif prop == 'NumImplicitHs':       props.append(atom.GetNumImplicitHs())
+            elif prop == 'TotalNumHs':          props.append(atom.GetTotalNumHs())
+            elif prop == 'ExplicitValence':     props.append(atom.GetExplicitValence())
+            elif prop == 'ImplicitValence':     props.append(atom.GetImplicitValence())
+            elif prop == 'TotalValence':        props.append(atom.GetTotalValence())
+            elif prop == 'IsInRing':            props.append(atom.IsInRing())
+            elif prop == 'Mass':                props.append(atom.GetMass())
+            elif prop == 'NumRadicalElectrons': props.append(atom.GetNumRadicalElectrons())
+            elif prop == 'IsAromatic':          props.append(int(atom.GetIsAromatic()))
+            else:
+                raise ValueError('atom feature {} is unavailable in RDkit'.format(prop))
+        X.append(props)    
+        # NOTE: atom_features below were used before in Odorant_perception.
+        # ['AtomicNum', 'FormalCharge', 'ChiralTag', 'Hybridization', 
+        # 'NumImplicitHs', 'ExplicitValence', 'Mass', 'IsAromatic']
+        # X.append([atom.GetAtomicNum(),          # atomic_num
+        #         atom.GetFormalCharge(),         # formal_charge
+        #         int(atom.GetChiralTag()),       # chiral_tag
+        #         int(atom.GetHybridization()),   # hybridization 
+        #         # atom.GetNumExplicitHs(),      # num_explicit_hs
+        #         atom.GetNumImplicitHs(),        # num_implicit_hs
+        #         # atom.GetTotalNumHs(),         # num_explicit_hs + num_implicit_hs
+        #         atom.GetExplicitValence(),
+        #         # atom.GetImplicitValence(),
+        #         # atom.GetTotalValence(),
+        #         # atom.IsInRing(),                   
+        #         atom.GetMass(),                 # mass
+        #         # atom.GetNumRadicalElectrons(),
+        #         int(atom.GetIsAromatic()), # is_aromatic
+        #         ])  
+   
     for bond in mol.GetBonds():
         begin.append(bond.GetBeginAtomIdx())
         end.append(bond.GetEndAtomIdx())
-        E.append([int(bond.GetBondType()),      # bond_type
-                # bond.GetIsAromatic(),         
-                # bond.GetIsConjugated(),
-                # bond.GetStereo(),             # stereo_configuration
-                # bond.GetValenceContrib(),      # contrib_to_valance
-                # bond.IsInRing(),
-                ])     
+        props = []
+        for prop in bond_features:
+            if   prop == 'BondType':        props.append(int(bond.GetBondType()))
+            elif prop == 'IsAromatic':      props.append(bond.GetIsAromatic())
+            elif prop == 'IsConjugated':    props.append(bond.GetIsConjugated())
+            elif prop == 'Stereo':          props.append(bond.GetStereo())
+            # elif prop == 'ValenceContrib':  props.append(bond.GetValenceContrib()) # TODO: This is specific for Atom-Bond pair.
+            elif prop == 'IsInRing':        props.append(bond.IsInRing())
+            else:
+                raise ValueError('bond feature {} is unavailable in RDkit'.format(prop))
+        E.append(props)
+
+        # NOTE: bond_features below were used before in Odorant_perception.
+        # ['BondType', 'IsAromatic']
+        # E.append([int(bond.GetBondType()),      # bond_type
+        #         bond.GetIsAromatic(),         
+        #         # bond.GetIsConjugated(),
+        #         # bond.GetStereo(),             # stereo_configuration
+        #         # bond.GetValenceContrib(),      # contrib_to_valance
+        #         # bond.IsInRing(),
+        #         ])     
 
     _E = list(zip(begin + end, end + begin, E + E))
     _E.sort(key=lambda ele: (ele[0], ele[1]))
@@ -224,11 +288,11 @@ def mol_to_numpy(mol, y = None, u = None):
     x = np.array(X, dtype = np.float32)
     a = A.astype(np.float32)
     e = E
-
+    
     G = (x, a, e, y, u)
     return G
 
-def mol_to_spektral(mol, y = None, u = None):
+def mol_to_spektral(mol, y = None, u = None, atom_features = [], bond_features = []):
     """
     For now, this is just an example function. Copy it and change if you need 
     any other Atom/Bond attributes.
@@ -261,7 +325,7 @@ def mol_to_spektral(mol, y = None, u = None):
         mapping from numbers to names can be accessed from CHIRAL_TAG, HYBRIDIZATION and BOND_TYPE
         objects (dictionaries).
     """
-    x, a, e, y, u = mol_to_numpy(mol, y, u)
+    x, a, e, y, u = mol_to_numpy(mol, y, u, atom_features, bond_features)
     G = sp_Graph(x = x,
                 a = a,
                 e = e,
@@ -274,7 +338,8 @@ def spektral_to_mol():
     raise NotImplementedError('spektral_to_mol is not implemented yet.')
 
 
-def smiles_to_spektral(smiles, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False):
+def smiles_to_spektral(smiles, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False,
+                        atom_features = ['AtomicNum'], bond_features = ['BondType']):
     """
     Convert SMILES string to spektral.data.graph.Graph.
 
@@ -300,13 +365,18 @@ def smiles_to_spektral(smiles, y = None, u = None, validate=False, scipy_E = Fal
         mol = Chem.rdmolops.AddHs(mol)
 
     can_smi = Chem.MolToSmiles(mol) # canonical SMILES - TO DO: Check if this row is necessary.
-    G = mol_to_spektral(mol, y = y, u = u)
+    G = mol_to_spektral(mol, 
+                        y = y, 
+                        u = u, 
+                        atom_features = atom_features, 
+                        bond_features = bond_features)
     if validate:
         raise NotImplementedError("validate = True is not implemented at the moment. Use validate = False.")
     return G
 
 
-def fasta_to_spektral(fasta, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False):
+def fasta_to_spektral(fasta, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False,
+                    atom_features = ['AtomicNum'], bond_features = ['BondType']):
     """
     Convert FASTA string to spektral.data.graph.Graph.
 
@@ -322,14 +392,19 @@ def fasta_to_spektral(fasta, y = None, u = None, validate=False, scipy_E = False
         mol = Chem.rdmolops.AddHs(mol)
 
     can_smi = Chem.MolToSmiles(mol) # canonical SMILES - TO DO: Check if this row is necessary.
-    G = mol_to_spektral(mol, y = y, u = u)
+    G = mol_to_spektral(mol, 
+                        y = y, 
+                        u = u,
+                        atom_features = atom_features, 
+                        bond_features = bond_features)
     if validate:
         raise NotImplementedError("validate = True is not implemented at the moment. Use validate = False.")
 
     return G
     
     
-def smiles_to_numpy(smiles, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False):
+def smiles_to_numpy(smiles, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False,
+                    atom_features = ['AtomicNum'], bond_features = ['BondType']):
     """
     Convert SMILES string to spektral.data.graph.Graph.
 
@@ -355,7 +430,11 @@ def smiles_to_numpy(smiles, y = None, u = None, validate=False, scipy_E = False,
         mol = Chem.rdmolops.AddHs(mol)
 
     can_smi = Chem.MolToSmiles(mol) # canonical SMILES - TO DO: Check if this row is necessary.
-    G = mol_to_numpy(mol, y = y, u = u)
+    G = mol_to_numpy(mol, 
+                    y = y, 
+                    u = u,
+                    atom_features = atom_features, 
+                    bond_features = bond_features)
     G = [s for s in G if s is not None]
     if validate:
         raise NotImplementedError("validate = True is not implemented at the moment. Use validate = False.")
@@ -369,25 +448,26 @@ if __name__ == '__main__':
 
     # fn = get_structure_by_path("Olfr263", pdb_path)
 
-    smiles = 'CC1=CCC(CC1O)C(=C)C'
-
-    G = smiles_to_spektral(smiles, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False)
-
-    print(G.x)
-    print(G.a)
-    print(G.e)
-
-    print('--------------------------')
-
-    fasta = 'WHVSC'
-
-    G = fasta_to_spektral(fasta, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False)
+    # smiles = 'C/C/1=C/CC/C(=C\[C@H]2[C@H](C2(C)C)CC1)/C'
+    # smiles = 'F/C=C\F'
+    smiles = 'C/C=C\CO'
+    G = smiles_to_spektral(smiles, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False, 
+                            atom_features = ['AtomicNum'], bond_features = ['BondType', 'Stereo'])
     print(G.x)
     print(G.a)
     print(G.e)
     print(G.u)
     print(G)
     print('--------------------------')
+
+    # fasta = 'WHVSC'
+    # G = fasta_to_spektral(fasta, y = None, u = None, validate=False, scipy_E = False, IncludeHs = False)
+    # print(G.x)
+    # print(G.a)
+    # print(G.e)
+    # print(G.u)
+    # print(G)
+    # print('--------------------------')
 
     # x, a, e, y, u = smiles_to_numpy(smiles, y = 1, u = np.array([1,2,3]), validate=False, scipy_E = False, IncludeHs = False)
     # print(x)
