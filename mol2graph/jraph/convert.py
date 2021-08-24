@@ -4,11 +4,15 @@ import jraph
 
 from rdkit import Chem
 
+from mol2graph.exceptions import NoBondsError
+
 def mol_to_jraph(mol, u = None, atom_features = [], bond_features = []):
     """
     See 'rdkit.Chem.rdchem.Atom' for all possible attributes of nodes and
     'rdkit.Chem.rdchem.Bond' for all possible attributes of edges 
     at https://www.rdkit.org/docs/source/rdkit.Chem.rdchem.html
+    https://www.rdkit.org/docs/source/rdkit.Chem.rdchem.html#rdkit.Chem.rdchem.BondType.values
+
 
     Paramters:
     ----------
@@ -102,10 +106,10 @@ def mol_to_jraph(mol, u = None, atom_features = [], bond_features = []):
     if u is not None:
         u = jax.tree_map(lambda x: jnp.array(x), u)
 
-    if len(e.shape) != 2:
-        print('WARNING: Molecule with no bonds and {} atoms'.format(len(X)))
+    if n_edge == 0:
+        raise NoBondsError('mol2graph: Molecule with no bonds and {} atoms'.format(len(X)))
 
-    assert len(e.shape) == 2 or n_edge == 0
+    assert len(e.shape) == 2
 
     G = jraph.GraphsTuple(nodes = x,
                         edges = e,
