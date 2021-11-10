@@ -1,5 +1,5 @@
 from rdkit import Chem
-
+import tensorflow as tf
 from mol2graph.spektral.containers import ExtendedGraph as sp_Graph
 
 from mol2graph.numpy.convert import mol_to_numpy
@@ -113,3 +113,10 @@ def fasta_to_spektral(fasta, y = None, u = None, validate=False, scipy_E = False
         raise NotImplementedError("validate = True is not implemented at the moment. Use validate = False.")
 
     return G
+
+if __name__ == '__main__':
+    smiles = 'C/C/1=C/CC/C(=C\[C@H]2[C@H](C2(C)C)CC1)/C'
+    
+    G1 = smiles_to_spektral(smiles, u = None, atom_features = ['AtomicNum'], bond_features = ['BondType'], IncludeHs = True)
+
+    print(G1)

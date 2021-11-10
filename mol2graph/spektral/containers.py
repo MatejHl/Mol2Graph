@@ -1,11 +1,19 @@
 import numpy as np
 import tensorflow as tf
 from scipy import sparse as sp
-from spektral.data.utils import get_spec, to_disjoint, prepend_none
-from spektral.layers.ops import sp_matrix_to_sp_tensor
-from spektral.data.graph import Graph
-from spektral.data.dataset import Dataset
-from spektral.data.loaders import DisjointLoader
+import spektral
+if spektral.__version__ <= '1.0.3':
+    from spektral.data.utils import get_spec, to_disjoint, prepend_none
+    from spektral.layers.ops import sp_matrix_to_sp_tensor
+    from spektral.data.graph import Graph
+    from spektral.data.dataset import Dataset
+    from spektral.data.loaders import DisjointLoader
+else:
+    from spektral.data.utils import get_spec, to_disjoint, prepend_none
+    from spektral.utils.sparse import sp_matrix_to_sp_tensor
+    from spektral.data.graph import Graph
+    from spektral.data.dataset import Dataset
+    from spektral.data.loaders import DisjointLoader
 
 
 class ExtendedGraph(Graph):
@@ -123,7 +131,10 @@ class ExtendedDisjointLoader(DisjointLoader):
     Extended to incorporate graph-level features.
     """
     def collate(self, batch):
-        packed = self.pack(batch, return_dict=True)
+        if spektral.__version__ <= '1.0.3':
+            packed = self.pack(batch, return_dict=True)
+        else:
+            packed = self.pack(batch)
         y = None
         if "y" in self.dataset.signature:
             y = packed.pop("y_list")
