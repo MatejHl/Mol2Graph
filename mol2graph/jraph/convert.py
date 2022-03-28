@@ -166,26 +166,27 @@ if __name__ == '__main__':
 
     print(G1)
 
+    print(jax.tree_map(lambda x: x.shape, G1))
+
     smiles = 'F/C=C\F'
-
     G2 = smiles_to_jraph(smiles, u = None, atom_features = ['AtomicNum'], bond_features = ['BondType'])
-
+ # 
     smiles = 'CC(C)C(C(=N)O)N=C(C1CCCN1C(=O)C(CCCCN)N=C(CN=C(C(CC2=CNC3=CC=CC=C32)N=C(C(CCCNC(=N)N)N=C(C(CC4=CC=CC=C4)N=C(C(CC5=CN=CN5)N=C(C(CCC(=O)O)N=C(C(CCSC)N=C(C(CO)N=C(C(CC6=CC=C(C=C6)O)N=C(C(CO)N=C(C)O)O)O)O)O)O)O)O)O)O)O)O'
-
+ # 
     G3 = smiles_to_jraph(smiles, u = None, atom_features = ['AtomicNum'], bond_features = ['BondType'])
-
+ # 
     G = jraph.batch([G1, G2, G3])
-
+# 
     print(G)
+    print(jax.tree_map(lambda x: x.shape, G))
 
-    G = jraph.unbatch(G)[0]
-
-    import networkx as nx
-    _G=nx.DiGraph()
-    _G.add_nodes_from(list(range(G.nodes.shape[0])))
-    _G.add_edges_from(list(zip(G.senders, G.receivers)))
-
-    import matplotlib.pyplot as plt
-
-    nx.draw(_G)
-    plt.show()
+    # G = jraph.unbatch(G)[0]
+    # 
+    # import networkx as nx
+    # _G=nx.DiGraph()
+    # _G.add_nodes_from(list(range(G1.nodes.shape[0])))
+    # _G.add_edges_from(list(zip(G1.senders, G1.receivers)))
+ 
+    # import matplotlib.pyplot as plt
+    # nx.draw(_G)
+    # plt.show()
