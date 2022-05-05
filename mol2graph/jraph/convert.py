@@ -6,7 +6,7 @@ from rdkit import Chem
 
 from mol2graph.exceptions import NoBondsError
 
-def mol_to_jraph(mol, u = None, atom_features = [], bond_features = []):
+def mol_to_jraph(mol, u = None, atom_features = [], bond_features = [], self_loops = False):
     """
     See 'rdkit.Chem.rdchem.Atom' for all possible attributes of nodes and
     'rdkit.Chem.rdchem.Bond' for all possible attributes of edges 
@@ -98,18 +98,35 @@ def mol_to_jraph(mol, u = None, atom_features = [], bond_features = []):
         E.append(props)    
 
     n_node = jnp.array([len(X)])
-    n_edge = jnp.array([2*len(E)])
-    x = jnp.array(X, dtype = jnp.float32)
+    
+    if len(atom_features) > 0:
+        x = jnp.array(X, dtype = jnp.float32)
+    else:
+        x = None
+
     senders = jnp.array(begin + end, dtype = jnp.int32)
     receivers = jnp.array(end + begin, dtype = jnp.int32)
-    e = jnp.array(E + E, dtype = jnp.float32)
+
+    if len(bond_features) > 0:
+        e = jnp.array(E + E, dtype = jnp.float32)
+        assert len(e.shape) == 2
+    else:
+        e = None
+
+    if self_loops:
+        if len(bond_features) > 0:
+            raise NotImplementedError('len(bond_features) > 1 and self_loops = True. If there are bond features, what are features of self-loops?')
+        senders = jnp.concatenate([jnp.arange(len(X)), senders])
+        receivers = jnp.concatenate([jnp.arange(len(X)), receivers])
+
+    assert len(senders) == len(receivers)
+    n_edge = jnp.array([len(senders)])
+    
     if u is not None:
         u = jax.tree_map(lambda x: jnp.array(x), u)
 
     if n_edge == 0:
         raise NoBondsError('mol2graph: Molecule with no bonds and {} atoms'.format(len(X)))
-
-    assert len(e.shape) == 2
 
     G = jraph.GraphsTuple(nodes = x,
                         edges = e,
@@ -122,7 +139,8 @@ def mol_to_jraph(mol, u = None, atom_features = [], bond_features = []):
 
 
 def smiles_to_jraph(smiles, u = None, validate=False, IncludeHs = False,
-                        atom_features = ['AtomicNum'], bond_features = ['BondType']):
+                        atom_features = ['AtomicNum'], bond_features = ['BondType'],
+                        self_loops = False):
     """
     Convert SMILES string to jraph.GraphsTuple.
 
@@ -154,7 +172,8 @@ def smiles_to_jraph(smiles, u = None, validate=False, IncludeHs = False,
     G = mol_to_jraph(mol, 
                     u = u, 
                     atom_features = atom_features, 
-                    bond_features = bond_features)
+                    bond_features = bond_features,
+                    self_loops = self_loops)
     return G
 
 
@@ -162,31 +181,32 @@ def smiles_to_jraph(smiles, u = None, validate=False, IncludeHs = False,
 if __name__ == '__main__':
     smiles = 'C/C/1=C/CC/C(=C\[C@H]2[C@H](C2(C)C)CC1)/C'
 
-    G1 = smiles_to_jraph(smiles, u = None, atom_features = ['AtomicNum'], bond_features = ['BondType'], IncludeHs = True)
+    G1 = smiles_to_jraph(smiles, u = None, atom_features = [], bond_features = [], IncludeHs = False, self_loops = False)
 
-    print(G1)
+    # print(G1)
 
     print(jax.tree_map(lambda x: x.shape, G1))
-
-    smiles = 'F/C=C\F'
-    G2 = smiles_to_jraph(smiles, u = None, atom_features = ['AtomicNum'], bond_features = ['BondType'])
- # 
-    smiles = 'CC(C)C(C(=N)O)N=C(C1CCCN1C(=O)C(CCCCN)N=C(CN=C(C(CC2=CNC3=CC=CC=C32)N=C(C(CCCNC(=N)N)N=C(C(CC4=CC=CC=C4)N=C(C(CC5=CN=CN5)N=C(C(CCC(=O)O)N=C(C(CCSC)N=C(C(CO)N=C(C(CC6=CC=C(C=C6)O)N=C(C(CO)N=C(C)O)O)O)O)O)O)O)O)O)O)O)O'
- # 
-    G3 = smiles_to_jraph(smiles, u = None, atom_features = ['AtomicNum'], bond_features = ['BondType'])
- # 
-    G = jraph.batch([G1, G2, G3])
-# 
-    print(G)
-    print(jax.tree_map(lambda x: x.shape, G))
+    print(G1.edges)
+    print(G1)
+    # smiles = 'F/C=C\F'
+    # G2 = smiles_to_jraph(smiles, u = None, atom_features = ['AtomicNum'], bond_features = ['BondType'])
+    # 
+    # smiles = 'CC(C)C(C(=N)O)N=C(C1CCCN1C(=O)C(CCCCN)N=C(CN=C(C(CC2=CNC3=CC=CC=C32)N=C(C(CCCNC(=N)N)N=C(C(CC4=CC=CC=C4)N=C(C(CC5=CN=CN5)N=C(C(CCC(=O)O)N=C(C(CCSC)N=C(C(CO)N=C(C(CC6=CC=C(C=C6)O)N=C(C(CO)N=C(C)O)O)O)O)O)O)O)O)O)O)O)O'
+    # 
+    # G3 = smiles_to_jraph(smiles, u = None, atom_features = ['AtomicNum'], bond_features = ['BondType'])
+    # 
+    # G = jraph.batch([G1, G2, G3])
+    # 
+    # print(G)
+    # print(jax.tree_map(lambda x: x.shape, G))
 
     # G = jraph.unbatch(G)[0]
     # 
-    # import networkx as nx
-    # _G=nx.DiGraph()
-    # _G.add_nodes_from(list(range(G1.nodes.shape[0])))
-    # _G.add_edges_from(list(zip(G1.senders, G1.receivers)))
- 
-    # import matplotlib.pyplot as plt
-    # nx.draw(_G)
-    # plt.show()
+    import networkx as nx
+    import numpy as np
+    _G=nx.DiGraph()
+    _G.add_nodes_from(list(range(G1.n_node[0])))
+    _G.add_edges_from(list(zip(np.asarray(G1.senders), np.asarray(G1.receivers))))
+    import matplotlib.pyplot as plt
+    nx.draw(_G)
+    plt.show()
